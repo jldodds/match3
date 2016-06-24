@@ -14,7 +14,7 @@ GameWindow {
     screenHeight: 960
 
     // initialiaze game when window is fully loaded
-    onSplashScreenFinished: scene.startGame()
+    onSplashScreenFinished: gameOverWindow.show()
 
     // for dynamic creation of entities
     EntityManager {
@@ -64,10 +64,21 @@ GameWindow {
             anchors.horizontalCenter: scene.horizontalCenter
             blockSize: 30
             y: 20
+            onGameOver: gameOverWindow.show()
+        }
+
+        // configure gameover window
+        GameOverWindow {
+          id: gameOverWindow
+          y: 90
+          opacity: 0 // by default the window is hidden
+          anchors.horizontalCenter: scene.horizontalCenter
+          onNewGameClicked: scene.startGame()
         }
 
         // initialize game
         function startGame() {
+            gameOverWindow.hide()
             gameArea.initializeField()
             scene.score = 0
         }
