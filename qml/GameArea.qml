@@ -19,6 +19,10 @@ Item {
     // array for handling game field
     property var field: []
 
+    property bool hasSelected : false
+    property int selectedRow
+    property int selectedCol
+
     // game over signal
     signal gameOver()
 
@@ -73,12 +77,41 @@ Item {
         // link click signal from block to handler function
         var entity = entityManager.getEntityById(id)
         entity.clicked.connect(handleClick)
-
+        entity.blockLanded.connect(checkBoard)
         return entity
     }
 
+
+    Timer {
+      id: checkTimer
+      interval: 100 //TODO make this a variable
+      repeat: false
+      running: false
+      onTriggered: {
+          checkBoard()
+      }
+    }
+
+    function checkBoard(){
+        if(!isFieldReadyForNewBlockRemoval())
+            return
+        var fieldCopy = field.slice()
+        for(var col = 0; col < columns; col++) {
+
+            // start at the bottom of the field
+            for(var row = rows - 1; row >= 0; row--) {
+                getNumberOfConnectedBlocks(fieldCopy, row, col, field[index(row,col)].type)
+            }
+        }
+        removeConnectedBlocks(fieldCopy)
+        moveBlocksToBottom()
+    }
+
     function handleClick(row, column, type) {
-        // copy current field, allows us to change the array without modifying the real game field
+        if(!isFieldReadyForNewBlockRemoval())
+              return
+
+       /* // copy current field, allows us to change the array without modifying the real game field
         // this simplifies the algorithms to search for connected blocks and their removal
         var fieldCopy = field.slice()
 
@@ -94,15 +127,73 @@ Item {
             if(isGameOver())
                 gameOver()
 
-        }
+        } */
 
+        var block = field[index(row, column)]
+
+        if(hasSelected){
+            var oldSelected = field[index(selectedRow, selectedCol)]
+            oldSelected.deselect()
+
+            if (Math.abs(row - selectedRow) + Math.abs(column - selectedCol) == 1){
+                hasSelected=false
+                oldSelected.moveTo(column, row)
+                block.moveTo(selectedCol, selectedRow)
+                field[index(row, column)] = oldSelected
+                field[index(selectedRow, selectedCol)] = block
+                checkTimer.start()
+                return
+            }
+        }
+        hasSelected = true
+        selectedRow = row
+        selectedCol = column
+
+        block.select()
+    }
+
+    function match(row, column, type){
+        return inBounds(row,column) && (field[index(row,column)].type == type)
+    }
+
+    function inRun(row,column){
+        var run = 0
+        var block = field[index(row,column)]
+        for(var i = row - 2; i <= row+2; i++)
+        {
+            if(match(i,column,block.type)){
+                run++
+            }
+            else if(run < 3)
+            {
+                run=0
+            }
+        }
+        if(run >=3){
+            return true
+        }
+        run=0
+        for(var i = column - 2; i <= column+2; i++)
+        {
+            if(match(row,i,block.type)){
+                run++
+            }
+            else if (run < 3){
+                run=0
+            }
+        }
+        return run >= 3
+    }
+
+    function inBounds(row,column){
+        return row < rows && column < columns && row >= 0 && column >= 0
     }
 
     // recursively check a block and its neighbours
     // returns number of connected blocks
     function getNumberOfConnectedBlocks(fieldCopy, row, column, type) {
         // stop recursion if out of bounds
-        if(row >= rows || column >= columns || row < 0 || column < 0)
+        if(!inBounds(row, column))
             return 0
 
         // get block
@@ -114,6 +205,10 @@ Item {
 
         // stop if block has different type
         if(block.type !== type)
+            return 0
+
+        //stop if not a run of three
+        if(!inRun(row,column))
             return 0
 
         // block has the required type and was not checked before
@@ -137,6 +232,7 @@ Item {
         // return number of connected blocks
         return count
     }
+
     // remove previously marked blocks
     function removeConnectedBlocks(fieldCopy) {
         // search for blocks to remove
@@ -146,7 +242,7 @@ Item {
                 var block = gameArea.field[i]
                 if(block !== null) {
                     gameArea.field[i] = null
-                    entityManager.removeEntityById(block.entityId)
+                    block.remove()
                 }
             }
         }
@@ -172,22 +268,23 @@ Item {
                             gameArea.field[index(moveRow,col)] = null
                             gameArea.field[index(row, col)] = moveBlock
                             moveBlock.row = row
-                            moveBlock.y = row * gameArea.blockSize
+                            moveBlock.fallDown(row - moveRow)
                             break
                         }
                     }
 
-                    // if no block found, fill whole column up with new blocks
                     if(moveBlock === null) {
-                        for(var newRow = row; newRow >= 0; newRow--) {
-                            var newBlock = createBlock(newRow, col)
-                            gameArea.field[index(newRow, col)] = newBlock
-                            newBlock.row = newRow
-                            newBlock.y = newRow * gameArea.blockSize
-                        }
+                      var distance = row + 1
 
-                        // column already filled up, no need to check higher rows again
-                        break
+                      for(var newRow = row; newRow >= 0; newRow--) {
+                        var newBlock = createBlock(newRow - distance, col)
+                        gameArea.field[index(newRow, col)] = newBlock
+                        newBlock.row = newRow
+                        newBlock.fallDown(distance)
+                      }
+
+                      // column already filled up, no need to check higher rows again
+                      break
                     }
                 }
 
@@ -221,5 +318,18 @@ Item {
       }
 
       return gameOver
+    }
+
+    // returns true if all animations are finished and new blocks may be removed
+    function isFieldReadyForNewBlockRemoval() {
+      // check if top row has empty spots or blocks not fully within game area
+      for(var col = 0; col < columns; col++) {
+        var block = field[index(0, col)]
+        if(block === null || block.y < 0)
+          return false
+      }
+
+      // field is ready
+      return true
     }
 }
